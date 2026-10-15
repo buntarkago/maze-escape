@@ -1,0 +1,88 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Maze viewer</title><style>
+:root{--bg:#f6f6f4;--card:#fff;--fg:#1c2127;--mut:#5d6773;--line:#d5d9de;--acc:#1f5f8b;--good:#1f7a4d;--bad:#b03a2e;--warn:#b27200;--wall:#1c2127;--ok:#1f7a4d}
+@media (prefers-color-scheme:dark){:root{--bg:#14171b;--card:#1b2026;--fg:#e6e9ed;--mut:#9aa4af;--line:#2f3741;--acc:#6eb0e0;--good:#5fc08c;--bad:#ef8a7e;--warn:#e0b457;--wall:#e6e9ed;--ok:#5fc08c}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,Arial,sans-serif;padding:16px}
+main{max-width:980px;margin:0 auto}h1{font-size:20px;font-weight:600;margin:0 0 4px}p{margin:0 0 8px}.mut{color:var(--mut)}
+.bar{display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0}
+.bar label{display:flex;gap:6px;align-items:center}
+button{font:inherit;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer}button:hover{border-color:var(--acc)}button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+input[type=file]{font:inherit;max-width:100%}input[type=range]{flex:1;min-width:200px}
+#view{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;text-align:center;overflow:auto}
+#view svg{max-width:100%;height:auto}
+#msg{margin:8px 0;min-height:22px}.err{color:var(--bad)}.okc{color:var(--good)}
+table{border-collapse:collapse;margin-top:8px}td,th{border-bottom:1px solid var(--line);padding:4px 14px 4px 0;text-align:left}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;color:var(--mut);font-size:13px}.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:5px}
+</style></head><body><main>
+<h1>Maze viewer</h1>
+<p class="mut">Draws your maze from the files of your program. Nothing is sent anywhere: the files are read in this page only.</p>
+<div class="bar">
+<label>walls.txt <input type="file" id="fw"></label>
+<label>maze.txt <input type="file" id="fm"></label>
+<label>path.txt (optional) <input type="file" id="fp"></label>
+</div>
+<div class="bar"><label><input type="checkbox" id="cg" checked> colour the groups</label><label><input type="checkbox" id="cn"> cell numbers</label>
+<span style="flex:1"></span><button id="png">Save PNG</button><button id="svg">Save SVG</button></div>
+<div id="msg" class="mut">Choose walls.txt first. maze.txt is the list of the line numbers of the broken walls, one per line. path.txt is the list of the cells of the path from the start to the exit, one per line.</div>
+<div id="view"></div>
+<div class="legend"><span><i style="background:var(--good);height:10px;width:10px;border-radius:5px"></i>start (cell 0)</span><span><i style="background:var(--bad);height:10px;width:10px;border-radius:5px"></i>exit</span><span><i style="background:var(--acc)"></i>your path</span><span>one colour = one group of connected cells</span></div>
+</main><script>
+const $=id=>document.getElementById(id);
+function pal(){const s=getComputedStyle(document.documentElement),g=n=>s.getPropertyValue(n).trim();return{fg:g('--wall'),acc:g('--acc'),good:g('--good'),bad:g('--bad'),warn:g('--warn'),bg:g('--card'),mut:g('--mut')}}
+function parseWalls(t){const L=t.split(/\r?\n/).map(x=>x.trim()).filter(x=>x);const h=L[0].split(/\s+/).map(Number);if(h.length<3||h.some(isNaN))throw new Error('first line must be: R C W');
+ const R=h[0],C=h[1],W=h[2];if(L.length-1!==W)throw new Error('expected '+W+' wall lines, found '+(L.length-1));
+ const w=L.slice(1).map((x,i)=>{const p=x.split(/\s+/).map(Number);if(p.length<3||p.some(isNaN))throw new Error('bad line '+(i+2));return{a:p[0],b:p[1],w:p[2]}});return{R,C,W,walls:w}}
+function parseInts(t){return t.split(/\s+/).filter(x=>x).map(Number)}
+class DSU{constructor(n){this.p=Array.from({length:n},(_,i)=>i);this.s=new Array(n).fill(1);this.c=n}
+ find(x){while(this.p[x]!==x){this.p[x]=this.p[this.p[x]];x=this.p[x]}return x}
+ union(a,b){let ra=this.find(a),rb=this.find(b);if(ra===rb)return false;if(this.s[ra]>this.s[rb])[ra,rb]=[rb,ra];this.p[ra]=rb;this.s[rb]+=this.s[ra];this.c--;return true}}
+// walls: index 0..W-1 = line 1..W. broken: array of indexes
+function adjOf(n,walls,broken){const g=Array.from({length:n},()=>[]);for(const k of broken){g[walls[k].a].push(walls[k].b);g[walls[k].b].push(walls[k].a)}return g}
+function bfs(g,s){const d=new Array(g.length).fill(-1);d[s]=0;const q=[s];for(let i=0;i<q.length;i++){const u=q[i];for(const v of g[u])if(d[v]<0){d[v]=d[u]+1;q.push(v)}}return d}
+function dfsPath(R,C,g,start,goal){const n=R*C,seen=new Array(n).fill(false),idx=new Array(n).fill(0),st=[start];seen[start]=true;let marked=1;if(start===goal)return{path:[start],marked:1};
+ const open=g.map(l=>new Set(l));
+ while(st.length){const u=st[st.length-1],cand=[u-C,u+1,u+C,u-1];let moved=false;
+  while(idx[u]<4){const v=cand[idx[u]++];if(v>=0&&v<n&&open[u].has(v)&&!seen[v]){seen[v]=true;marked++;st.push(v);moved=true;if(v===goal)return{path:st.slice(),marked};break}}
+  if(!moved)st.pop()}
+ return{path:null,marked}}
+function groupColors(n,walls,opened){const d=new DSU(n);for(const k of opened)d.union(walls[k].a,walls[k].b);const roots=[...new Set(Array.from({length:n},(_,i)=>d.find(i)))];const h={};roots.forEach((r,i)=>h[r]=(i*47)%360);return Array.from({length:n},(_,i)=>h[d.find(i)])}
+// draw. opts: R,C,walls,opened(Set of indexes),colors(bool),cur{k,state},path[],marks{start,exit},shortcut(k), numbers(bool)
+function draw(o){const P=pal(),{R,C,walls}=o;const cell=Math.max(8,Math.min(46,Math.floor(760/Math.max(R,C)))),pad=14,W=C*cell+2*pad,H=R*cell+2*pad,n=R*C;let s='';
+ const cx=u=>pad+(u%C)*cell+cell/2,cy=u=>pad+Math.floor(u/C)*cell+cell/2;
+ s+=`<rect x="0" y="0" width="${W}" height="${H}" fill="${P.bg}"/>`;
+ if(o.colors){const hs=groupColors(n,walls,o.opened);for(let u=0;u<n;u++)s+=`<rect x="${pad+(u%C)*cell}" y="${pad+Math.floor(u/C)*cell}" width="${cell}" height="${cell}" fill="hsla(${hs[u]},65%,55%,.26)"/>`}
+ if(o.numbers&&cell>=26)for(let u=0;u<n;u++)s+=`<text x="${cx(u)}" y="${cy(u)+4}" text-anchor="middle" font-size="${Math.min(11,cell/3.4)}" fill="${P.mut}" font-family="monospace">${u}</text>`;
+ const seg=(x1,y1,x2,y2,c,w,d)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${w}" stroke-linecap="round" ${d?'stroke-dasharray="'+d+'"':''}/>`;
+ const lw=Math.max(1.6,cell/15);
+ s+=seg(pad,pad,pad+C*cell,pad,P.fg,lw*1.4)+seg(pad,pad+R*cell,pad+C*cell,pad+R*cell,P.fg,lw*1.4)+seg(pad,pad,pad,pad+R*cell,P.fg,lw*1.4)+seg(pad+C*cell,pad,pad+C*cell,pad+R*cell,P.fg,lw*1.4);
+ // wall geometry: wall between a and b (a<b): vertical if b==a+1, horizontal if b==a+C
+ const geo=k=>{const{a,b}=walls[k];if(b===a+1){const x=pad+((a%C)+1)*cell,y=pad+Math.floor(a/C)*cell;return[x,y,x,y+cell]}const x=pad+(a%C)*cell,y=pad+(Math.floor(a/C)+1)*cell;return[x,y,x+cell,y]};
+ for(let k=0;k<walls.length;k++){const w=walls[k];if(!(w.b===w.a+1||w.b===w.a+C)||w.b>=n)continue;
+  if(!o.opened.has(k)){let c=P.fg,wd=lw;if(o.cur&&o.cur.k===k){c=o.cur.state==='keep'?P.bad:P.warn;wd=lw*2.4}if(o.hideStanding&&!(o.cur&&o.cur.k===k))continue;s+=seg(...geo(k),c,wd)}
+  else if(o.cur&&o.cur.k===k){const g=geo(k);const dx=g[2]-g[0],dy=g[3]-g[1];s+=seg(g[0]+dx*.18,g[1]+dy*.18,g[2]-dx*.18,g[3]-dy*.18,P.good,lw*1.6,'3 4')}}
+ if(o.shortcut!=null){const g=geo(o.shortcut);s+=seg(...g,P.warn,lw*2.4,'5 4')}
+ if(o.path&&o.path.length>1){s+=`<polyline fill="none" stroke="${P.acc}" stroke-width="${Math.max(2.4,cell/7)}" stroke-linejoin="round" stroke-linecap="round" points="${o.path.map(u=>cx(u)+','+cy(u)).join(' ')}"/>`}
+ s+=`<circle cx="${cx(0)}" cy="${cy(0)}" r="${Math.max(3.5,cell/4)}" fill="${P.good}"/><circle cx="${cx(n-1)}" cy="${cy(n-1)}" r="${Math.max(3.5,cell/4)}" fill="${P.bad}"/>`;
+ return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="monospace">${s}</svg>`}
+function download(name,blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+function savePng(svg,name){const m=svg.match(/width="(\d+)" height="(\d+)"/),w=+m[1],h=+m[2],sc=2;const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=w*sc;c.height=h*sc;const x=c.getContext('2d');x.drawImage(img,0,0,w*sc,h*sc);c.toBlob(b=>download(name,b),'image/png')};img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)}
+
+let M=null,broken=null,path=null,svg='';
+async function rd(el){return el.files[0]?await el.files[0].text():null}
+function msg(t,c){$('msg').textContent=t;$('msg').className=c||'mut'}
+async function load(){try{
+ const tw=await rd($('fw'));if(!tw){svg='';$('view').innerHTML='';return}
+ M=parseWalls(tw);const n=M.R*M.C;const tm=await rd($('fm')),tp=await rd($('fp'));let notes=[],bad=false;
+ broken=new Set();if(tm){for(const v of parseInts(tm)){if(!Number.isInteger(v)||v<1||v>M.W){notes.push('maze.txt: '+v+' is not a wall number (1..'+M.W+')');bad=true;continue}if(broken.has(v-1))notes.push('maze.txt: wall '+v+' appears twice');broken.add(v-1)}}
+ path=null;if(tp){path=parseInts(tp);const g=adjOf(n,M.walls,[...broken]);const open=g.map(l=>new Set(l));
+  for(let i=0;i<path.length;i++){if(!(path[i]>=0&&path[i]<n)){notes.push('path.txt: '+path[i]+' is not a cell');path=null;break}if(i&&!open[path[i-1]].has(path[i])){notes.push('path.txt: the step '+path[i-1]+' to '+path[i]+' goes through a wall (or the cells are not neighbours)');break}}
+  if(path&&path[0]!==0)notes.push('path.txt: the path should start in cell 0');if(path&&path[path.length-1]!==n-1)notes.push('path.txt: the path should end in cell '+(n-1))}
+ const d=new DSU(n);let loops=0;for(const k of broken){if(!d.union(M.walls[k].a,M.walls[k].b))loops++}
+ let info=M.R+' rows, '+M.C+' columns, '+M.W+' inner walls.';
+ if(tm)info+=' Broken: '+broken.size+'. Groups: '+d.c+'. '+(loops?'Walls that closed a loop: '+loops+'. ':'')+(d.c===1&&!loops?'The maze is connected and has no loops.':'');
+ msg(info+(notes.length?'  '+notes.join(' | '):''),notes.length||loops?'err':'okc');
+ render()}catch(e){msg('Cannot read the file: '+e.message,'err')}}
+function render(){if(!M)return;svg=draw({R:M.R,C:M.C,walls:M.walls,opened:broken,colors:$('cg').checked,path:path,numbers:$('cn').checked});$('view').innerHTML=svg}
+['fw','fm','fp'].forEach(i=>$(i).onchange=load);['cg','cn'].forEach(i=>$(i).onchange=render);
+$('png').onclick=()=>svg&&savePng(svg,'maze.png');$('svg').onclick=()=>svg&&download('maze.svg',new Blob([svg],{type:'image/svg+xml'}));
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',render);
+</script></body></html>
