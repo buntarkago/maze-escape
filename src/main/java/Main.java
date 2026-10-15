@@ -62,12 +62,17 @@ public class Main {
         // Mission 4. Zones of the slides: Kosaraju. Topological order of all cells:
         // possible or not.
         long zones = 0, largestZone = 0, isDag = 0;
-        // TODO
+        Kosaraju kos = new Kosaraju(slides);
+        zones = kos.zones;
+        largestZone = kos.largest;
+        isDag = kos.isDag ? 1 : 0;
 
         // Mission 5. The graph of zones in topological order: the longest chain and the
         // cheapest route to the exit.
         long flowStages = 0, fastestRouteCost = 0;
-        // TODO
+        ZoneGraph zg = new ZoneGraph(slides, kos);
+        flowStages = zg.flowStages;
+        fastestRouteCost = zg.fastestRouteCost;
 
         // Mission 6. The best extra wall in the maze of Mission 1: BFS from the start,
         // BFS from the exit.
