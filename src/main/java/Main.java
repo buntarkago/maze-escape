@@ -49,7 +49,15 @@ public class Main {
         // Mission 3. Escape: DFS from cell 0 to the last cell in the maze of Mission 1
         // (up, right, down, left).
         long pathLength = 0, dfsVisited = 0, deadEnds = 0;
-        // TODO
+        Maze maze = new Maze(walls, isBroken);
+        long[] dfs = maze.dfs();
+        pathLength = dfs[0];
+        dfsVisited = dfs[1];
+        deadEnds = maze.deadEnds();
+        try (PrintWriter pw = new PrintWriter("path.txt")) {
+            for (int c : maze.path)
+                pw.println(c);
+        }
 
         // Mission 4. Zones of the slides: Kosaraju. Topological order of all cells:
         // possible or not.
