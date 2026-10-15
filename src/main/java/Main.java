@@ -40,7 +40,11 @@ public class Main {
         // Mission 2. The cheapest maze: Kruskal with your DisjointSet, and Prim with a
         // priority queue (the two costs must be equal).
         long mstCost = 0, heaviestBrokenWall = 0;
-        // TODO
+        long[] kr = Mst.kruskal(walls);
+        long[] pr = Mst.prim(walls);
+        mstCost = kr[0];
+        heaviestBrokenWall = kr[1];
+        System.out.println("Kruskal cost: " + kr[0] + ", Prim cost: " + pr[0]);
 
         // Mission 3. Escape: DFS from cell 0 to the last cell in the maze of Mission 1
         // (up, right, down, left).
